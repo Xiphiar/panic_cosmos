@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Improvements
+* (alerts) Added a threshold for change in voting power to reduce alert spam in the case of tiny changes. The default is **1** and this can be customised by modifying the `change_in_voting_power_threshold` field in the `internal_config.ini`.
+* (errors) Improved handling of IncompleteRead errors that were showing up on the alert channels.
+
+## 1.1.2
+
+Released on August 5, 2020.
+
+### Update Instructions
+If still not updated to `v1.1.1`, check out the [`v1.1.1` update instructions](https://github.com/SimplyVC/panic_cosmos/releases/tag/v1.1.1).
+
+For `v1.1.1` to `v1.1.2`:
+```shell script
+git fetch            # Fetch these changes
+git checkout v1.1.2  # Switch to this version
+pipenv sync          # Update dependencies
+```
+
+PANIC can now be started up. If the alerter was running as a Linux service, the service should now be restarted:
+```shell script
+sudo systemctl restart panic_alerter
+```
+
+User config files from `v1.1.1` are compatible with `v1.1.2`.
+
 ### Bug Fixes
 * (genesis) Network monitor no longer crashes if the chain of the nodes being monitored has not started
 * (repos) Repository names are now forced to be unique during setup. This is necessary to prevent key clashes in Redis
@@ -13,6 +38,7 @@
 ### Changes and Improvements
 * (startup) Alerter can now start even if one or more nodes/repos are not accessible. It sends a single alert per inaccessible node/repo
 * (twilio) Added official support for [TwiML](https://www.twilio.com/docs/voice/twiml). Configurable from the internal config to either a URL or raw TwiML instructions
+* (downtime) Can now specify a delay before getting high severity alerts for node downtime by modifying the `downtime_initial_alert_delay_seconds` field in `internal_config.ini`.
 
 ## 1.1.1
 
@@ -28,7 +54,7 @@ git checkout v1.1.1  # Switch to this version
 pipenv sync          # Update dependencies
 ```
 
-P.A.N.I.C. can now be started up. If the alerter was running as a Linux service, the service should now be restarted:
+PANIC can now be started up. If the alerter was running as a Linux service, the service should now be restarted:
 ```shell script
 sudo systemctl restart panic_alerter
 ```
@@ -60,7 +86,7 @@ Released on December 09, 2019.
 
 ### Update Instructions
 
-To update an instance of P.A.N.I.C. to this version:
+To update an instance of PANIC to this version:
 ```shell script
 git fetch            # Fetch these changes
 git checkout v1.1.0  # Switch to this version
@@ -71,7 +97,7 @@ pipenv run python run_util_update_to_v1.1.0.py
 
 The `run_util_update_to_v1.1.0.py` script updates `user_config_main.ini` so that it becomes compatible with the v1.1.0 `user_config_main.ini` file.
 
-P.A.N.I.C. can now be started up. If the alerter was running as a Linux service, the service should now be restarted:
+PANIC can now be started up. If the alerter was running as a Linux service, the service should now be restarted:
 
 ```shell script
 sudo systemctl restart panic_alerter

@@ -3,9 +3,11 @@ import unittest
 from datetime import datetime, timedelta
 from time import sleep
 
-import dateutil
+import dateutil.parser
 from redis import ConnectionError as RedisConnectionError
 
+from src.alerting.alerts.alerts import VotingPowerDecreasedByAlert, \
+    VotingPowerIncreasedByAlert
 from src.alerting.channels.channel import ChannelSet
 from src.node.node import Node, NodeType
 from src.utils.redis_api import RedisApi
@@ -19,10 +21,15 @@ class TestNodeWithoutRedis(unittest.TestCase):
         self.node_name = 'testnode'
         self.logger = logging.getLogger('dummy')
 
-        self.downtime_alert_time_interval = \
-            TestInternalConf.downtime_alert_time_interval
-        self.downtime_alert_time_interval_with_error_margin = \
-            self.downtime_alert_time_interval + timedelta(seconds=0.5)
+        self.downtime_initial_alert_delay = \
+            TestInternalConf.downtime_initial_alert_delay
+        self.downtime_initial_alert_delay_with_error_margin = \
+            self.downtime_initial_alert_delay + timedelta(seconds=0.5)
+
+        self.downtime_reminder_alert_interval = \
+            TestInternalConf.downtime_reminder_interval_seconds
+        self.downtime_reminder_alert_interval_with_error_margin = \
+            self.downtime_reminder_alert_interval + timedelta(seconds=0.5)
 
         self.max_missed_blocks_time_interval = \
             TestInternalConf.max_missed_blocks_time_interval
@@ -31,6 +38,9 @@ class TestNodeWithoutRedis(unittest.TestCase):
 
         self.max_missed_blocks_in_time_interval = \
             TestInternalConf.max_missed_blocks_in_time_interval
+
+        self.voting_power_threshold = \
+            TestInternalConf.change_in_voting_power_threshold
 
         self.full_node = Node(name=self.node_name, rpc_url=None,
                               node_type=NodeType.NON_VALIDATOR_FULL_NODE,
@@ -109,107 +119,197 @@ class TestNodeWithoutRedis(unittest.TestCase):
                                                   'catching_up=True, '
                                                   'number_of_peers=999')
 
-    def test_first_set_as_down_sends_info_alert_and_sets_node_to_down(self):
-        self.validator.set_as_down(self.channel_set, self.logger)
+    def test_set_as_down_validator(self):
+        NODE = self.validator
+        self.assertFalse(NODE.is_down)
 
+        # First one sets validator to down but sends no alerts
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Second one sends info alert and keeps validator down
+        NODE.set_as_down(self.channel_set, self.logger)
         self.assertEqual(self.counter_channel.info_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Next is the initial downtime alert, but this is
+        # not sent if not enough time has passed for it
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # ...if enough time passed for an initial alert, a major alert is sent
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.major_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Next is the downtime reminder alert, but this is
+        # not sent if not enough time has passed for it
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # ...if enough time passed for a reminder, a major alert is sent again
+        sleep(self.downtime_reminder_alert_interval_with_error_margin.seconds)
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.major_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+    def test_set_as_down_full_node(self):
+        NODE = self.full_node
+        self.assertFalse(NODE.is_down)
+
+        # First one sets full node to down but sends no alerts
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Second one sends info alert and keeps full node down
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.info_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Next is the initial downtime alert, but this is
+        # not sent if not enough time has passed for it
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # ...if enough time passed for an initial alert, a minor alert is sent
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.minor_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # Next is the downtime reminder alert, but this is
+        # not sent if not enough time has passed for it
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+        # ...if enough time passed for a reminder, a minor alert is sent again
+        sleep(self.downtime_reminder_alert_interval_with_error_margin.seconds)
+        NODE.set_as_down(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.minor_count, 1)
+        self.assertTrue(NODE.is_down)
+
+        self.counter_channel.reset()
+
+    def test_set_as_up_sends_no_alerts_if_not_down(self):
+        self.validator.set_as_up(self.channel_set, self.logger)
+
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertFalse(self.validator.is_down)
+
+    def test_set_as_up_sends_no_alerts_if_initial_downtime_alert_not_sent(self):
+        self.validator._went_down_at = datetime.min  # non-None, i.e. down
+        self.validator._initial_downtime_alert_sent = False
+
+        # Confirm that nodes down
         self.assertTrue(self.validator.is_down)
 
-    def test_second_set_as_down_sends_major_alert_if_validator(self):
-        self.validator.set_as_down(self.channel_set, self.logger)
         self.counter_channel.reset()  # ignore previous alerts
-        self.validator.set_as_down(self.channel_set, self.logger)
 
+        self.validator.set_as_up(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+
+        self.assertFalse(self.validator.is_down)
+
+    def test_set_as_up_sends_info_alerts_if_initial_downtime_alert_sent(self):
+        self.validator._went_down_at = datetime.min  # non-None, i.e. down
+        self.validator._initial_downtime_alert_sent = True
+
+        # Confirm that nodes down
+        self.assertTrue(self.validator.is_down)
+
+        self.counter_channel.reset()  # ignore previous alerts
+
+        self.validator.set_as_up(self.channel_set, self.logger)
+        self.assertEqual(self.counter_channel.info_count, 1)
+
+        self.assertFalse(self.validator.is_down)
+
+    def test_set_as_up_resets_initial_downtime_alert_timing(self):
+        self.validator.set_as_down(self.channel_set, self.logger)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        self.validator.set_as_up(self.channel_set, self.logger)
+
+        self.counter_channel.reset()  # ignore previous alerts
+
+        self.validator.set_as_down(self.channel_set, self.logger)
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertTrue(self.validator.is_down)
+
+        # Without the set_as_up, the set_as_down produces an alert. We can try
+        # this out by first setting the validator back to up
+        self.validator.set_as_up(self.channel_set, self.logger)
+
+        self.validator.set_as_down(self.channel_set, self.logger)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        # self.validator.set_as_up(self.channel_set, self.logger) # !!
+
+        self.counter_channel.reset()  # ignore previous alerts
+
+        self.validator.set_as_down(self.channel_set, self.logger)
         self.assertEqual(self.counter_channel.major_count, 1)
         self.assertTrue(self.validator.is_down)
 
-    def test_second_set_as_down_sends_minor_alert_if_non_validator(self):
-        self.full_node.set_as_down(self.channel_set, self.logger)
+    def test_set_as_up_resets_downtime_reminder_alert_timing(self):
+        self.validator.set_as_down(self.channel_set, self.logger)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_reminder_alert_interval_with_error_margin.seconds)
+        self.validator.set_as_up(self.channel_set, self.logger)
+
         self.counter_channel.reset()  # ignore previous alerts
-        self.full_node.set_as_down(self.channel_set, self.logger)
 
-        self.assertEqual(self.counter_channel.minor_count, 1)
-        self.assertTrue(self.full_node.is_down)
-
-    def test_third_set_as_down_does_nothing_if_within_time_interval_for_validator(
-            self):
         self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.counter_channel.reset()  # ignore previous alerts
-        self.validator.set_as_down(self.channel_set, self.logger)
-
         self.assertTrue(self.counter_channel.no_alerts())
         self.assertTrue(self.validator.is_down)
 
-    def test_third_set_as_down_does_nothing_if_within_time_interval_for_non_validator(
-            self):
-        self.full_node.set_as_down(self.channel_set, self.logger)
-        self.full_node.set_as_down(self.channel_set, self.logger)
+        # Without the set_as_up, the set_as_down produces an alert. We can try
+        # this out by first setting the validator back to up
+        self.validator.set_as_up(self.channel_set, self.logger)
+
+        self.validator.set_as_down(self.channel_set, self.logger)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_initial_alert_delay_with_error_margin.seconds)
+        self.validator.set_as_down(self.channel_set, self.logger)
+        sleep(self.downtime_reminder_alert_interval_with_error_margin.seconds)
+        # self.validator.set_as_up(self.channel_set, self.logger) # !!
+
         self.counter_channel.reset()  # ignore previous alerts
-        self.full_node.set_as_down(self.channel_set, self.logger)
 
-        self.assertTrue(self.counter_channel.no_alerts())
-        self.assertTrue(self.full_node.is_down)
-
-    def test_third_set_as_down_sends_major_alert_if_after_time_interval_for_validator(
-            self):
         self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.counter_channel.reset()  # ignore previous alerts
-        sleep(self.downtime_alert_time_interval_with_error_margin.seconds)
-        self.validator.set_as_down(self.channel_set, self.logger)
-
         self.assertEqual(self.counter_channel.major_count, 1)
         self.assertTrue(self.validator.is_down)
-
-    def test_third_set_as_down_sends_minor_alert_if_after_time_interval_for_non_validator(
-            self):
-        self.full_node.set_as_down(self.channel_set, self.logger)
-        self.full_node.set_as_down(self.channel_set, self.logger)
-        self.counter_channel.reset()  # ignore previous alerts
-        sleep(self.downtime_alert_time_interval_with_error_margin.seconds)
-        self.full_node.set_as_down(self.channel_set, self.logger)
-
-        self.assertEqual(self.counter_channel.minor_count, 1)
-        self.assertTrue(self.full_node.is_down)
-
-    def test_set_as_up_does_nothing_if_not_down(self):
-        self.validator.set_as_up(self.channel_set, self.logger)
-        self.assertTrue(self.counter_channel.no_alerts())
-        self.assertFalse(self.validator.is_down)
-
-    def test_set_as_up_sets_as_up_but_no_alerts_if_set_as_down_called_only_once(
-            self):
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.counter_channel.reset()  # ignore previous alerts
-
-        self.validator.set_as_up(self.channel_set, self.logger)
-        self.assertTrue(self.counter_channel.no_alerts())
-        self.assertFalse(self.validator.is_down)
-
-    def test_set_as_up_sets_as_up_and_sends_info_alert_if_set_as_down_called_twice(
-            self):
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.counter_channel.reset()  # ignore previous alerts
-
-        self.validator.set_as_up(self.channel_set, self.logger)
-        self.assertEqual(self.counter_channel.info_count, 1)
-        self.assertFalse(self.validator.is_down)
-
-    def test_set_as_up_resets_alert_time_interval(self):
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.validator.set_as_up(self.channel_set, self.logger)
-
-        self.counter_channel.reset()  # ignore previous alerts
-
-        self.validator.set_as_down(self.channel_set, self.logger)
-        self.assertEqual(self.counter_channel.info_count, 1)
-        self.assertTrue(self.validator.is_down)
-
-        # Without the set_as_up, the set_as_down does not produce an alert
 
     def test_first_missed_block_increases_missed_blocks_count_but_no_alerts(
             self):
@@ -365,34 +465,12 @@ class TestNodeWithoutRedis(unittest.TestCase):
 
         self.assertTrue(self.counter_channel.no_alerts())
 
-    def test_set_voting_power_raises_info_alert_if_voting_power_increases_from_non_0(
-            self):
-        increased_voting_power = self.dummy_voting_power + 1
-
-        self.validator.set_voting_power(self.dummy_voting_power,
-                                        self.channel_set, self.logger)
-        self.validator.set_voting_power(increased_voting_power,
-                                        self.channel_set, self.logger)
-
-        self.assertEqual(self.counter_channel.info_count, 1)
-
     def test_set_voting_power_raises_info_alert_if_voting_power_increases_from_0(
             self):
         # This is just to cover the unique message when power increases from 0
 
         self.validator.set_voting_power(0, self.channel_set, self.logger)
         self.validator.set_voting_power(self.dummy_voting_power,
-                                        self.channel_set, self.logger)
-
-        self.assertEqual(self.counter_channel.info_count, 1)
-
-    def test_set_voting_power_raises_info_alert_if_voting_power_decreases_to_non_0(
-            self):
-        decreased_voting_power = self.dummy_voting_power - 1
-
-        self.validator.set_voting_power(self.dummy_voting_power,
-                                        self.channel_set, self.logger)
-        self.validator.set_voting_power(decreased_voting_power,
                                         self.channel_set, self.logger)
 
         self.assertEqual(self.counter_channel.info_count, 1)
@@ -404,6 +482,87 @@ class TestNodeWithoutRedis(unittest.TestCase):
         self.validator.set_voting_power(0, self.channel_set, self.logger)
 
         self.assertEqual(self.counter_channel.major_count, 1)
+
+    def test_set_voting_power_no_alerts_if_difference_is_negative_below_threshold_and_no_balance_is_0(
+            self) -> None:
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power - \
+                           self.voting_power_threshold + 1
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertEqual(self.validator.voting_power,
+                         new_voting_power)
+
+    def test_set_voting_power_no_alerts_if_difference_is_positive_below_threshold_and_no_balance_is_0(
+            self) -> None:
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power + \
+                           self.voting_power_threshold - 1
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertEqual(self.validator.voting_power,
+                         new_voting_power)
+
+    def test_set_voting_power_no_alerts_if_difference_is_negative_and_equal_to_threshold_and_no_balance_is_0(
+            self):
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power - \
+                           self.voting_power_threshold
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertEqual(self.validator.voting_power,
+                         new_voting_power)
+
+    def test_set_voting_power_no_alerts_if_difference_is_positive_and_equal_to_threshold_and_no_balance_is_0(
+            self):
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power + \
+                           self.voting_power_threshold
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertTrue(self.counter_channel.no_alerts())
+        self.assertEqual(self.validator.voting_power,
+                         new_voting_power)
+
+    def test_set_voting_power_raises_info_alert_if_difference_is_positive_above_threshold_no_balance_is_0(
+            self):
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power + \
+                           self.voting_power_threshold + 1
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertEqual(self.counter_channel.info_count, 1)
+        self.assertIsInstance(self.counter_channel.latest_alert,
+                              VotingPowerIncreasedByAlert)
+        self.assertEqual(self.validator.voting_power,
+                         new_voting_power)
+
+    def test_set_voting_power_raises_info_alert_if_difference_is_negative_above_threshold_no_balance_is_0(
+            self):
+        self.validator.set_voting_power(self.dummy_voting_power,
+                                        self.channel_set, self.logger)
+        new_voting_power = self.dummy_voting_power - \
+                           self.voting_power_threshold - 1
+        self.validator.set_voting_power(new_voting_power, self.channel_set,
+                                        self.logger)
+
+        self.assertEqual(self.counter_channel.info_count, 1)
+        self.assertIsInstance(self.counter_channel.latest_alert,
+                              VotingPowerDecreasedByAlert)
+        self.assertEqual(self.validator.voting_power, new_voting_power)
 
     def test_set_catching_up_raises_minor_alert_first_time_round_if_true(self):
         self.validator.set_catching_up(True, self.channel_set, self.logger)
