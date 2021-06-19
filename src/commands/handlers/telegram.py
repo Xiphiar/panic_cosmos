@@ -350,12 +350,12 @@ class TelegramCommands(Commands):
         # Send list of links to validators
         update.message.reply_text(
             'Links to validators:\n'
-            '  Cashmaney: {}\n'
-            '  Puzzle: {}\n'
-            '  Secretscan: {}'.format(
-                self._internal_conf.validators_cashmaney_link,
-                self._internal_conf.validators_puzzle_link,
-                self._internal_conf.validators_secretscan_link))
+            '  Validator 1: {}\n'
+            '  Validator 2: {}\n'
+            '  Validator 3: {}'.format(
+                self._internal_conf.validators_1,
+                self._internal_conf.validators_2,
+                self._internal_conf.validators_3))
 
     def _block_callback(self, update: Update, context: CallbackContext):
         self._logger.info('/block: update=%s, context=%s', update, context)
@@ -375,12 +375,12 @@ class TelegramCommands(Commands):
             height = int(message_parts[1])
             update.message.reply_text(
                 'Links to block:\n'
-                '  Cashmaney: {}{}\n'
-                '  Puzzle: {}{}\n'
-                '  Secretscan: {}{}'.format(
-                    self._internal_conf.block_cashmaney_link_prefix, height,
-                    self._internal_conf.block_puzzle_link_prefix, height,
-                    self._internal_conf.block_secretscan_link_prefix, height))
+                '  Block Explorer 1: {}{}\n'
+                '  Block Explorer 2: {}{}\n'
+                '  Block Explorer 3: {}{}'.format(
+                    self._internal_conf.block_1, height,
+                    self._internal_conf.block_2, height,
+                    self._internal_conf.block_3, height))
         except ValueError:
             update.message.reply_text("I expected a block height.")
 
@@ -401,12 +401,12 @@ class TelegramCommands(Commands):
         tx_hash = message_parts[1]
         update.message.reply_text(
             'Links to transaction:\n'
-            '  Cashmaney: {}{}\n'
-            '  Puzzle: {}{}\n'
-            '  Secretscan: {}{}'.format(
-                self._internal_conf.tx_cashmaney_link_prefix + str(tx_hash),
-                self._internal_conf.tx_puzzle_link_prefix + str(tx_hash),
-                self._internal_conf.tx_secretscan_link_prefix + str(tx_hash)))
+            '  TX 1: {}{}\n'
+            '  Tx 2: {}{}\n'
+            '  TX 3: {}{}'.format(
+                self._internal_conf.tx_1 + str(tx_hash),
+                self._internal_conf.tx_2 + str(tx_hash),
+                self._internal_conf.tx_3 + str(tx_hash)))
 
     def _help_callback(self, update: Update, context: CallbackContext):
         self._logger.info('/help: update=%s, context=%s', update, context)
