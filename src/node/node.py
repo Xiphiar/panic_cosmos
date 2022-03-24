@@ -11,6 +11,7 @@ from src.utils.config_parsers.internal_parsed import InternalConf
 from src.utils.datetime import strfdelta
 from src.utils.redis_api import RedisApi
 from src.utils.timing import TimedTaskLimiter, TimedOccurrenceTracker
+from src.utils.config_parsers.user import UserConfig
 
 
 class NodeType(Enum):
@@ -21,7 +22,8 @@ class NodeType(Enum):
 class Node:
     def __init__(self, name: str, rpc_url: Optional[str], node_type: NodeType,
                  pubkey: Optional[str], network: str, redis: Optional[RedisApi],
-                 internal_conf: InternalConfig = InternalConf) -> None:
+                 internal_conf: InternalConfig = InternalConf,
+                 user_conf: UserConfig = UserConf) -> None:
         super().__init__()
 
         self.name = name
@@ -39,6 +41,8 @@ class Node:
         self._catching_up = False
         self._no_of_peers = None
         self._initial_downtime_alert_sent = False
+        self._voting_power_alert_minimum_change = \
+            user_conf.voting_power_alert_minimum_change
 
         self._validator_peer_danger_boundary = \
             internal_conf.validator_peer_danger_boundary
@@ -268,7 +272,7 @@ class Node:
                     self.name, self.voting_power, new_voting_power))
             else:  # Any change
                 diff = new_voting_power - self.voting_power
-                if diff > 0:
+                if diff > self._voting_power_alert_minimum_change:
                     channels.alert_info(VotingPowerIncreasedByAlert(
                         self.name, self.voting_power, new_voting_power))
                 else:
