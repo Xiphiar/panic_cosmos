@@ -276,7 +276,7 @@ class Node:
                 if diff > self._voting_power_alert_minimum_change:
                     channels.alert_info(VotingPowerIncreasedByAlert(
                         self.name, self.voting_power, new_voting_power))
-                else:
+                elif diff < -(self._voting_power_alert_minimum_change):
                     channels.alert_info(VotingPowerDecreasedByAlert(
                         self.name, self.voting_power, new_voting_power))
 

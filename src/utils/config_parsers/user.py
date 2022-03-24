@@ -46,8 +46,8 @@ class UserConfig(ConfigParser):
         # [general]
         self.unique_alerter_identifier = cp['general'][
             'unique_alerter_identifier']
-        self.voting_power_alert_minimum_change = cp['general'][
-            'voting_power_alert_minimum_change']
+        self.voting_power_alert_minimum_change = int(cp['general'][
+            'voting_power_alert_minimum_change'])
 
         # [telegram_alerts]
         self.telegram_alerts_enabled = to_bool(cp['telegram_alerts']['enabled'])
