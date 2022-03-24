@@ -101,7 +101,8 @@ class VotingPowerIncreasedByAlert(Alert):
 
     def __init__(self, node: str, old_power: int, new_power: int) -> None:
         change = new_power - old_power
-        if change >= 100:
+        print(change);
+        if int(change) >= 100:
             super().__init__(
                 '{} voting power INCREASED by {} from {} to {}.'.format(
                     node, change, old_power, new_power))
@@ -111,7 +112,8 @@ class VotingPowerDecreasedByAlert(Alert):
 
     def __init__(self, node: str, old_power: int, new_power: int) -> None:
         change = old_power - new_power
-        if change >= 100:
+        print(change);
+        if int(change) >= 100:
             super().__init__(
                 '{} voting power DECREASED by {} from {} to {}.'.format(
                     node, change, old_power, new_power))
