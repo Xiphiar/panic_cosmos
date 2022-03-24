@@ -12,6 +12,7 @@ from src.utils.datetime import strfdelta
 from src.utils.redis_api import RedisApi
 from src.utils.timing import TimedTaskLimiter, TimedOccurrenceTracker
 from src.utils.config_parsers.user import UserConfig
+from src.utils.config_parsers.user_parsed import UserConf
 
 
 class NodeType(Enum):
